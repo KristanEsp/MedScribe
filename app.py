@@ -283,9 +283,9 @@ def string_cluster(df_sentence_transcript):
 #Perform classification using the trained LSTM model on each string cluster
 def label_speaker(row):
     #Create a new dataframe
-    le = joblib.load("/data/LabelEncoder.bin")
-    lstm_model = load_model("/data/lstm_model.keras")
-    tokenizer = joblib.load("/data/Tokenizer.bin")
+    le = joblib.load("/data/SavedModels/LabelEncoder.bin")
+    lstm_model = load_model("/data/SavedModels/lstm_model.keras")
+    tokenizer = joblib.load("/data/SavedModels/Tokenizer.bin")
     
     #Perform the text processing
     pred_text = text_clean(row["transcript"])
