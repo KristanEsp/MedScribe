@@ -85,7 +85,7 @@ def import_audio_file(file):
 
 
 #Transcribe text using faster whisper
-def transcribe_text(file, model_size = "medium.en", device = "cpu", compute_type = "float16"):
+def transcribe_text(file, model_size = "medium.en", device = "cpu", compute_type = "int8"):
     #Initiate whisper model
     whisper_model = WhisperModel(model_size, device = device, compute_type = compute_type)
     
