@@ -72,16 +72,16 @@ def import_audio_file(file):
     return (waveform, sample_rate)
 
 #Transcribe text using faster whisper
-def transcribe_text(file, model_size = "medium.en", device = "cuda", compute_type = "float16"):
+if torch.cuda.is_available():
+    device = "cuda" 
+    compute_type = "float16"
+else:
+    device = "cpu"
+    compute_type = "int8"
+whisper_model = WhisperModel("medium.en", device = device, compute_type = compute_type)
+
+def transcribe_text(file, whisper_model):
     #Initiate whisper model
-    if torch.cuda.is_available():
-        device = "cuda" 
-        compute_type = "float16"
-    else:
-        device = "cpu"
-        compute_type = "int8"
-    whisper_model = WhisperModel(model_size, device = device, compute_type = compute_type)
-    
     segments, _ = whisper_model.transcribe(file,
                                            vad_filter = True,
                                            word_timestamps = True, 
@@ -421,7 +421,7 @@ def med_scribe(file_path, num_speakers = None): #num_speakers = None if unknown
 
     #Perform transcription
     print("Performing Transcription...")
-    segments = transcribe_text(file_path)
+    segments = transcribe_text(file_path, whisper_model)
 
     ###Perform Speaker Diarization
     embeddings, complete_transcript, start_times, end_times = extract_embeddings(segments, waveform, sample_rate)
