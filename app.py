@@ -696,4 +696,4 @@ with gr.Blocks(title = "MedScribe", css = css) as demo:
                      outputs = [transcript_markdown, summary_markdown, reupload_button])
 
 #Launch the GUI
-demo.launch(share = True, debug = True, inbrowser = True)
+demo.launch(share = True, debug = True, inbrowser = True, allowed_paths = ["/data/SampleAudio"])
