@@ -648,12 +648,12 @@ with gr.Blocks(title = "MedScribe", css = css) as demo:
             
             #An example audio files that users can click
             gr.Examples(
-                examples = [
-                    ["/data/SampleAudio/Resp_13min.mp3"],
-                    ["/data/SampleAudio/Cardio_10min.mp3"],
+                examples = [  
                     ["/data/SampleAudio/Derma_10min.mp3"],
-                    ["/data/SampleAudio/MusculoSkeletal_10min.mp3"],
+                    ["/data/SampleAudio/Cardio_10min.mp3"],
                     ["/data/SampleAudio/Urinary_8min.mp3"],
+                    ["/data/SampleAudio/MusculoSkeletal_10min.mp3"],
+                    ["/data/SampleAudio/Resp_13min.mp3"],
                     ["/data/SampleAudio/YT_GPBehindDoors_8min.mp3"],
                 ],
                 inputs = audio,
@@ -669,6 +669,7 @@ with gr.Blocks(title = "MedScribe", css = css) as demo:
                         <li>Uploaded audio file must be at least 3 minutes long to provide enough data for speaker diarization and identification</li>
                         <li>Works best with 2 speakers (1 doctor & 1 patient)</li>
                         <li>Voices must be audible with good volume</li>
+                        <li>A 10 minute audio file takes ~1-2 minutes to process</li>
                         <em>* You can find other doctor-patient audio samples from: 
                             <a href=https://www.kaggle.com/datasets/najamahmed97/audio-recording-whisper?resource=download>https://www.kaggle.com/datasets/najamahmed97/audio-recording-whisper?resource=download</a>
                         </em></br>
