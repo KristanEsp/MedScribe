@@ -7,16 +7,23 @@ import gradio as gr
 #For transcription
 from faster_whisper import WhisperModel
 from keras.models import load_model
-from pydub import AudioSegment
+import soundfile as sf
+import librosa
 import re
 from statistics import mode
 
 #For Speaker Diarization
 from resemblyzer import VoiceEncoder, preprocess_wav
+import torch
 from scipy.cluster.hierarchy import linkage, fcluster
 from sklearn.cluster import AgglomerativeClustering
 
-#Text Cleaning
+#For Spekear Identification (Classification)
+from tensorflow.keras.models import load_model
+import tensorflow as tf
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+#For Text Cleaning
 import re
 import nltk
 from nltk.tokenize import word_tokenize
@@ -24,12 +31,12 @@ from nltk.corpus import stopwords
 nltk.download('wordnet')
 nltk.download('punkt_tab')
 nltk.download('stopwords')
+# import import_ipynb
+# from Classification import text_clean
 
-#For Spekear Identification (Classification)
-from tensorflow.keras.models import load_model
-import tensorflow as tf
-from tensorflow.keras.preprocessing.sequence import pad_sequences
-
+#For SUmmarization
+import os
+from huggingface_hub import InferenceClient
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -41,18 +48,10 @@ warnings.filterwarnings('ignore')
 # 
 # The waveform of the audio file will be obtained using the Librosa library. Then the faster whisper model will be used to provide the initial transcript with some segmentation
 
-# In[554]:
-
-
 #Convert mp files to wav since resemblyzer embedding works better with wav
 def convert_to_wav(input_file, output_file):
-    sound = AudioSegment.from_file(input_file)
-    sound = sound.set_frame_rate(16000).set_channels(1)
-    sound.export(output_file, format = "wav")
-
-
-# In[555]:
-
+    audio, sr = librosa.load(input_file, sr = 16000, mono = True)
+    sf.write(output_file, audio, 16000)
 
 def normalize_audio(waveform):
     peak = np.max(np.abs(waveform))
@@ -60,19 +59,11 @@ def normalize_audio(waveform):
         waveform = waveform / peak
     return waveform
 
-
-# In[556]:
-
-
 def boost_audio(waveform, db):
     factor = 10 ** (db / 20) 
     boosted = waveform * factor
     boosted = np.clip(boosted, -1.0, 1.0) 
     return boosted
-
-
-# In[557]:
-
 
 def import_audio_file(file):
     #Extracting audio file's waveform with librosa
@@ -80,12 +71,8 @@ def import_audio_file(file):
     waveform, sample_rate = librosa.load(file_path, res_type = "kaiser_fast", sr = None)
     return (waveform, sample_rate)
 
-
-# In[558]:
-
-
 #Transcribe text using faster whisper
-def transcribe_text(file, model_size = "medium.en", device = "cpu", compute_type = "int8"):
+def transcribe_text(file, model_size = "medium.en", device = "cuda", compute_type = "float16"):
     #Initiate whisper model
     whisper_model = WhisperModel(model_size, device = device, compute_type = compute_type)
     
@@ -94,24 +81,22 @@ def transcribe_text(file, model_size = "medium.en", device = "cpu", compute_type
                                            word_timestamps = True, 
                                            beam_size = 8)
     return segments
-
+    
 
 # # Speaker Diarization
 # 
 # Speaker Diarization/Differentiation will be done by doing the following steps
 # 
-# 1.) Using resemblyzer to embedd each spoken word from the audio. This embedding is the extracted features, represetning the voice characteristics of each spoken word and will be used to differentiate between speakers
+# 1.) Using resemblyzer to embedd each spoken word from the audio. This embedding is the extracted features, 
+#     represetning the voice characteristics of each spoken word and will be used to differentiate between speakers
 # 
 # 2.) Performing Clustering on the extracted embedded features
 
 # ## Extracting embedding features
-
-# In[560]:
-
-
 def extract_embeddings(segments, waveform, sample_rate):
     #Generate embeddings for each audio word usig resemblyzer
     print("Extracting embeddings, Please Wait...")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     encoder = VoiceEncoder()
     embeddings = []
     complete_transcript = []
@@ -146,10 +131,8 @@ def extract_embeddings(segments, waveform, sample_rate):
 
 # ## Clustering using Agglomerative Clustering
 # 
-# Agglomerative clustering was the chosen clustering technique because of its advantage of being able to generate clusters without knowing the K value. This is important as an audio file may contain an unknown number of speakers.
-
-# In[561]:
-
+# Agglomerative clustering was the chosen clustering technique because of its advantage of being able to generate clusters without knowing the K value. 
+# This is important as an audio file may contain an unknown number of speakers.
 
 #Setting the distance threshold automatically 
 def calculate_threshold(embeddings):  
@@ -161,15 +144,11 @@ def calculate_threshold(embeddings):
     optimal_index = np.argmax(differences)
     
     #Selecting the threshold based on the index with the largest difference
-    buffer = 0.25 #Add some buffer to help avoid over-splitting (having more clusters)
+    buffer = 0.5 #Add some buffer to help avoid over-splitting (having more clusters)
     threshold = distances[optimal_index]
     threshold = threshold + buffer
 
     return threshold
-
-
-# In[562]:
-
 
 def apply_clustering(embeddings, threshold):
     agglo_cluster = AgglomerativeClustering(n_clusters = None, #Setting to None because using the calculated distance threhsold instead
@@ -179,10 +158,6 @@ def apply_clustering(embeddings, threshold):
     
     cluster_pred = agglo_cluster.fit_predict(embeddings)
     return cluster_pred
-
-
-# In[563]:
-
 
 #Store the transcript and cluster prediction to a df
 def create_cluster_df(cluster_pred, complete_transcript, start_times, end_times):
@@ -194,11 +169,7 @@ def create_cluster_df(cluster_pred, complete_transcript, start_times, end_times)
 
     return df_word_transcript
 
-
 # ## Converting the transcript from word per word back to sentence form
-
-# In[564]:
-
 
 def recreate_sentences(df_word_transcript):
     sentences = []
@@ -253,13 +224,9 @@ def recreate_sentences(df_word_transcript):
     df_sentence_transcript = pd.DataFrame(sentences)
     return(df_sentence_transcript)
 
-
 # # Speaker Identification
 # 
 # Labelling which cluster is the doctor and patient using the trained Bidirectional-LSTM model from the Classification notebook
-
-# In[545]:
-
 
 #Combine all transcripts within each clusters into a single string
 def string_cluster(df_sentence_transcript):
@@ -276,9 +243,45 @@ def string_cluster(df_sentence_transcript):
     df_prediction = pd.DataFrame(cluster_transcripts, columns = ["cluster", "transcript"])
     return(df_prediction)
 
+### Text Cleaning
+def text_clean(text):
+    #Lower Casing
+    text_clean = text.lower()
+    
+    #Remove punctuations
+    punctuations = r"[^\w\s]"
+    text_clean = re.sub(punctuations, " ", text_clean)
 
-# In[546]:
+    #Tokenization
+    text_clean = word_tokenize(text_clean)
 
+    #Remove stop words
+    stop_words = set(stopwords.words("english"))
+    text_clean = [word for word in text_clean if word not in stop_words]
+
+    #Lemmatization
+    wn = nltk.WordNetLemmatizer()
+    text_lemmatized = []
+    for word in text_clean:
+        text_lemmatized.append(wn.lemmatize(word))
+
+    #Remove filler words like "um" "like" and basic greetings like "hi", "hey", "hello"
+    filtered_list = []
+    for token in text_lemmatized:
+        if token in ["um", "like", "uhm", "uh", "hi", "hey", "hello"]:
+            continue
+        #also remove digits
+        if token.isdigit():
+            continue
+            
+        filtered_list.append(token)
+
+    text_clean = filtered_list
+
+    #Concat all tokens into a single string
+    text_clean = " ".join(text_clean)
+
+    return text_clean
 
 #Perform classification using the trained LSTM model on each string cluster
 def label_speaker(row):
@@ -305,10 +308,6 @@ def label_speaker(row):
     row["PatientPredictProbability"] = prediction_prob
     
     return row
-
-
-# In[547]:
-
 
 #At least one doctor and one patient must be identified.
 def detect_missing_identities(df):
@@ -337,10 +336,7 @@ def detect_missing_identities(df):
         df.loc[chosen_row, "SpeakerLabel"] = "Patient"
 
     return df
-
-
-# In[548]:
-
+    
 
 #Multiple Patients/Doctors will be numbered e.g. Patient 1, Patient 2
 def detect_multiple_identities(df):
@@ -359,19 +355,13 @@ def detect_multiple_identities(df):
     df["SpeakerLabel"] = counted_labels
     return df
 
-
-# In[549]:
-
-
 #Replace the unlabelled clusters in the df_sentence_transcript with the predicted labels
 def replace_labels(df_sentence_transcript, df_prediction):
     labelled_map = dict(zip(df_prediction["cluster"], df_prediction["SpeakerLabel"]))
     df_sentence_transcript["Speaker"] = df_sentence_transcript["Speaker"].map(labelled_map)
     return df_sentence_transcript
 
-
 # # Text Cleaning Function
-
 def text_clean(text):
     #Lower Casing
     text_clean = text.lower()
@@ -413,11 +403,8 @@ def text_clean(text):
 
 
 # # Wrapping to one function
-
-# In[506]:
-
-
 def med_scribe(file_path, num_speakers = None): #num_speakers = None if unknown
+
     #Convert to wav
     convert_to_wav(file_path, "output.wav")
 
@@ -456,7 +443,7 @@ def med_scribe(file_path, num_speakers = None): #num_speakers = None if unknown
 
 # # GUI w/ Gradio
 
-
+#css styling
 css = """
 /* Gr.Audio component styling */
 .hf-audio {
@@ -499,18 +486,87 @@ css = """
     border-radius: 10px !important;
 }
 
+/* Summary box */
+.summary-box * {
+    font-size: 1.25rem;
+    line-height: 1.5 !important;
+    padding: 1px !important;
+    background: rgba(0, 123, 255, 0.15) !important;
+    border-radius: 10px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    flex-grow: 2.5 !important;
+}
+
+
+
+/* Instruction box */
+.instruction-box * {
+    font-size: 15px !important;
+    line-height: 1.5 !important;
+    padding: 1px !important;
+    background: rgba(0, 0, 0, 0.05) !important;
+    border-radius: 10px !important;
+}
+
 
 
 """
 
 
-# In[565]:
+# ## Helper Functions
 
+#Using Meta's Llama LLM model to summarize text
+def summarize_text(full_transcript):
+    #Get inference client using my HF token
+    client = InferenceClient(api_key = os.environ.get("HF_TOKEN"))
+
+    #Use model to generate summary based on the prompt
+    response = client.chat.completions.create(
+    model = "meta-llama/Meta-Llama-3-8B-Instruct",
+        messages=[
+            {"role": "system", "content": "You are a clinical summarization assistant."},
+            {"role": "user", "content": f"""
+    Generate a SOAP-style clinical summary based on the given Conversation between Doctor and Patient.
+    
+    S (Subjective): Summarize the patient's subjective concerns, symptoms, context, and relevant history.
+    O (Objective): Extract objective findings mentioned in the transcript (vitals, observations, exam findings, measurable data).
+    A (Assessment): Provide a concise assessment of the patient's condition based only on the transcript.
+    P (Plan): Suggest an appropriate plan or next steps based strictly on what was discussed.
+    
+    If a section has no information, write "None reported." DO not include the instructions in the output.
+    Format the final answer exactly as:
+    # S (Subjective):
+    [subjective content]
+    
+    # O (Objective):
+    [objective content]
+    
+    # A (Assessment):
+    [assessment content]
+    
+    # P (Plan):
+    [plan content]
+    
+    Conversation:
+    {full_transcript}
+    
+    Clinical Summary:
+    """}
+        ],
+        max_tokens = 300
+    )
+
+    return (response.choices[0].message.content)
+
+#Make the re-upload button apear when an audio file is currently uploaded
+def show_reupload(audio):
+    return gr.update(visible = audio)
 
 def print_transcripts(audio):
     if audio is None:
-        return "", gr.update(visible = False)
-    
+        return "", "", gr.update(visible = False)
+
     #Process the audio to get the dataframe transcript
     df_transcript = med_scribe(audio)
 
@@ -526,16 +582,17 @@ def print_transcripts(audio):
         lines.append(current_line)
 
     lines = "\n\n".join(lines)
-    return lines, gr.update(visible = audio)
 
-#Make the re-upload button apear when an audio file is currently uploaded
-def show_reupload(audio):
-    return gr.update(visible = audio)
-
-
-# In[566]:
+    #Get the summary
+    summary = summarize_text(lines)
+    summary = f"**Summary:** \n\n {summary}"
+    
+    return lines, summary, gr.update(visible = audio)
 
 
+# ## Gradio
+
+# Main GUI
 with gr.Blocks(title = "MedScribe", css = css) as demo:
     ### A heading for the title of the application
     gr.HTML("""
@@ -546,7 +603,7 @@ with gr.Blocks(title = "MedScribe", css = css) as demo:
         line-height: 1.45;
     ">
         <h1 style = "
-            font-size: 28px;
+            font-size: 35px;
             font-weight: 700;
             margin: 0 0 6px 0;
             display: inline-flex;
@@ -560,10 +617,12 @@ with gr.Blocks(title = "MedScribe", css = css) as demo:
              opacity: 0.7; 
              margin-bottom: 12px;
         ">
-            Transcribes doctor-patient audio consultations with speaker diarization and speaker identification
+            Transcribes doctor-patient audio consultations with speaker diarization and speaker identification. <br>
+            Generates a summary of the transcript using Llama-3-8B-Instruct
         </div>
     """)
 
+    #Audio Section
     with gr.Row():
         with gr.Column(scale = 1):
             audio = gr.Audio(type = "filepath",
@@ -580,15 +639,55 @@ with gr.Blocks(title = "MedScribe", css = css) as demo:
                                              value = "Re-upload Audio",
                                              visible = False,
                                              elem_classes = ["hf-audio "])
+            
+            #An example audio files that users can click
+            gr.Examples(
+                examples = [
+                    ["/data/SampleAudio/Resp_13min.mp3"],
+                    ["/data/SampleAudio/Cardio_10min.mp3"],
+                    ["/data/SampleAudio/Derma_10min.mp3"],
+                    ["/data/SampleAudio/MusculoSkeletal_10min.mp3"],
+                    ["/data/SampleAudio/Urinary_8min.mp3"],
+                    ["/data/SampleAudio/YT_GPBehindDoors_8min.mp3"],
+                ],
+                inputs = audio,
+                label = "Quick Audio Examples - Click to load"
+            )
 
+            #Description about the application
+            gr.Markdown(
+                """
+                <div>
+                    <b>Note:</b>
+                    <ul>
+                        <li>Uploaded audio file must be at least 3 minutes long to provide enough data for speaker diarization and identification</li>
+                        <li>Works best with 2 speakers (1 doctor & 1 patient)</li>
+                        <li>Voices must be audible with good volume</li>
+                        <em>* You can find other doctor-patient audio samples from: 
+                            <a href=https://www.kaggle.com/datasets/najamahmed97/audio-recording-whisper?resource=download>https://www.kaggle.com/datasets/najamahmed97/audio-recording-whisper?resource=download</a>
+                        </em></br>
+                        <b>Disclamer: Transcription and summarization may be inaccurate. Proper validation and expert review are necessary for medical applications </b>
+                    </ul>
+                </div>
+                """,
+                elem_classes = ["instruction-box"]
+            )
+        #Transcript Section
         with gr.Column(scale = 2):
             transcript_markdown = gr.Markdown(label = "Transcript", 
                                               height = 1000,
                                               elem_classes = ["transcript-box"])
+
+
+        #Summary Section
+        with gr.Column(scale = 1):
+            summary_markdown = gr.Markdown(label = "Summary", 
+                                           height = 750,
+                                           elem_classes = ["summary-box"])
             
         audio.change(print_transcripts, 
                      inputs = audio, 
-                     outputs = [transcript_markdown, reupload_button])
+                     outputs = [transcript_markdown, summary_markdown, reupload_button])
 
 #Launch the GUI
 demo.launch(share = True, debug = True, inbrowser = True)
