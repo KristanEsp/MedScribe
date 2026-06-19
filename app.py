@@ -74,6 +74,7 @@ def import_audio_file(file):
 #Transcribe text using faster whisper
 def transcribe_text(file, model_size = "medium.en", device = "cuda", compute_type = "float16"):
     #Initiate whisper model
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     whisper_model = WhisperModel(model_size, device = device, compute_type = compute_type)
     
     segments, _ = whisper_model.transcribe(file,
@@ -97,7 +98,7 @@ def extract_embeddings(segments, waveform, sample_rate):
     #Generate embeddings for each audio word usig resemblyzer
     print("Extracting embeddings, Please Wait...")
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    encoder = VoiceEncoder()
+    encoder = VoiceEncoder(device = device)
     embeddings = []
     complete_transcript = []
     start_times = []
