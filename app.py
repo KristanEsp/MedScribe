@@ -74,7 +74,12 @@ def import_audio_file(file):
 #Transcribe text using faster whisper
 def transcribe_text(file, model_size = "medium.en", device = "cuda", compute_type = "float16"):
     #Initiate whisper model
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if torch.cuda.is_available():
+        device = "cuda" 
+        compute_type = "float16"
+    else:
+        device = "cpu"
+        compute_type = "int8"
     whisper_model = WhisperModel(model_size, device = device, compute_type = compute_type)
     
     segments, _ = whisper_model.transcribe(file,
