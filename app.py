@@ -28,9 +28,6 @@ import re
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
-nltk.download('wordnet')
-nltk.download('punkt_tab')
-nltk.download('stopwords')
 # import import_ipynb
 # from Classification import text_clean
 
