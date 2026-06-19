@@ -421,7 +421,7 @@ def med_scribe(file_path, num_speakers = None): #num_speakers = None if unknown
 
     #Perform transcription
     print("Performing Transcription...")
-    segments = transcribe_text(file_path, whisper_model)
+    segments = transcribe_text("output.wav", whisper_model)
 
     ###Perform Speaker Diarization
     embeddings, complete_transcript, start_times, end_times = extract_embeddings(segments, waveform, sample_rate)
