@@ -577,6 +577,7 @@ def print_transcripts(audio):
 
     #Get each line one by one
     lines = []
+    subtitles = [] #For the gr.audio direct subtitling
     for idx, row in df_transcript.iterrows():
         #Get the start time of the sentence
         sentence_start_time = round(row["StartTime"])
@@ -585,6 +586,10 @@ def print_transcripts(audio):
         
         current_line = f"[{minutes}:{seconds:02d}] {row['Speaker']}: {row['Transcripts']}"
         lines.append(current_line)
+        subtitles.append({
+            "text": f"{row['Speaker']}: {row['Transcripts']}",
+            "timestamp": [row["StartTime"], row["EndTime"]]
+        })
 
     lines = "\n\n".join(lines)
 
@@ -592,7 +597,7 @@ def print_transcripts(audio):
     summary = summarize_text(lines)
     summary = f"**Summary:** \n\n {summary}"
     
-    return lines, summary, gr.update(visible = audio)
+    return lines, summary, gr.update(subtitles = subtitles), gr.update(visible = audio)
 
 
 # ## Gradio
@@ -693,7 +698,7 @@ with gr.Blocks(title = "MedScribe", css = css) as demo:
             
         audio.change(print_transcripts, 
                      inputs = audio, 
-                     outputs = [transcript_markdown, summary_markdown, reupload_button])
+                     outputs = [transcript_markdown, summary_markdown, audio, reupload_button])
 
 #Launch the GUI
 demo.launch(share = True, debug = True, inbrowser = True, allowed_paths = ["/data/SampleAudio"])
