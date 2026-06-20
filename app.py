@@ -26,6 +26,8 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 #For Text Cleaning
 import re
 import nltk
+nltk_dir = "/data/nltk_data"
+nltk.data.path.append(nltk_dir)
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 # import import_ipynb
